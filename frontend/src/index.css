@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+/* TipTap rich text reset & canvas node styles */
+.tiptap {
+  outline: none;
+  height: 100%;
+  width: 100%;
+}
+
+.tiptap p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  color: #adb5bd;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
