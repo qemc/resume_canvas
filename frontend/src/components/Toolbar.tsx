@@ -1,20 +1,14 @@
 import { useCanvasStore } from '@/store/useCanvasStore';
-import TextFormattingToolbar from './TextFormattingToolbar';
 
 export default function Toolbar() {
-  const addItem = useCanvasStore((s) => s.addItem);
   const canvasItems = useCanvasStore((s) => s.canvasItems);
-  const activeEditor = useCanvasStore((s) => s.activeEditor);
   const selectedItemIds = useCanvasStore((s) => s.selectedItemIds);
   const zoom = useCanvasStore((s) => s.zoom);
   const setZoom = useCanvasStore((s) => s.setZoom);
-
   const selectItem = useCanvasStore((s) => s.selectItem);
   const setEditingItem = useCanvasStore((s) => s.setEditingItem);
 
   const selectedItem = selectedItemIds.length === 1 ? canvasItems.find((i) => i.id === selectedItemIds[0]) : null;
-  const showTextTools = selectedItem?.type === 'text' && activeEditor;
-
   const zoomPercent = Math.round(zoom * 100);
 
   const handlePrint = () => {
@@ -26,34 +20,34 @@ export default function Toolbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm py-2 px-4 sm:px-6 flex items-center justify-between min-h-[56px] no-print gap-2">
+    <header className="sticky top-0 z-50 w-full bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm py-2 px-4 sm:px-6 flex items-center justify-between min-h-[52px] no-print gap-3 select-none">
       {/* Brand & Stats */}
-      <div className="flex items-center space-x-2 shrink-0">
+      <div className="flex items-center space-x-3 shrink-0">
         <span className="font-bold text-gray-800 text-sm sm:text-base flex items-center gap-1.5">
-          📄 Resume Canvas
+          <svg className="w-4 h-4 text-blue-600 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Resume Canvas
         </span>
         <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium hidden sm:inline-block">
-          {canvasItems.length} {canvasItems.length === 1 ? 'item' : 'items'}
+          {canvasItems.length} {canvasItems.length === 1 ? 'element' : 'elements'}
         </span>
       </div>
 
-      {/* Middle Contextual Tools */}
-      <div className="flex-1 flex justify-center px-2 min-w-0 overflow-x-auto">
-        {showTextTools ? (
-          <TextFormattingToolbar editor={activeEditor} />
-        ) : (
-          <div className="text-xs text-gray-400 font-medium hidden lg:block">
-            {selectedItemIds.length > 1 
-              ? `${selectedItemIds.length} items selected`
-              : selectedItem
-              ? `Selected ${selectedItem.type} block`
-              : 'Select an element to format'}
-          </div>
-        )}
+      {/* Middle Context Status */}
+      <div className="flex-1 flex justify-center px-2 min-w-0">
+        <div className="text-xs text-gray-400 font-medium hidden md:block">
+          {selectedItemIds.length > 1
+            ? `${selectedItemIds.length} elements selected`
+            : selectedItem
+            ? `Editing ${selectedItem.type} block`
+            : 'Select an element on the canvas to inspect'}
+        </div>
       </div>
 
-      {/* Right side: Zoom + Add buttons + Print as PDF */}
+      {/* Right side: Zoom + Print as PDF */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* Zoom Controls */}
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg px-1.5 py-1">
           <button
             onClick={() => setZoom(zoom - 0.1)}
@@ -83,30 +77,16 @@ export default function Toolbar() {
           </button>
         </div>
 
-        {/* Add buttons */}
-        <button
-          onClick={() => addItem('text')}
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-sm active:scale-95 cursor-pointer"
-          title="Add Text Block"
-        >
-          <span>📝</span> <span className="hidden sm:inline">Text</span>
-        </button>
-
-        <button
-          onClick={() => addItem('image')}
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-500 transition-colors shadow-sm active:scale-95 cursor-pointer"
-          title="Add Image Block"
-        >
-          <span>🖼️</span> <span className="hidden sm:inline">Image</span>
-        </button>
-
         {/* Print as PDF button */}
         <button
           onClick={handlePrint}
           title="Print or Save as PDF (Cmd+P / Ctrl+P)"
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-500 transition-colors shadow-sm active:scale-95 cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-500 transition-colors shadow-sm active:scale-95 cursor-pointer"
         >
-          <span>🖨️</span> <span>PDF</span>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+          <span>Print as PDF</span>
         </button>
       </div>
     </header>

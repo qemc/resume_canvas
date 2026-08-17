@@ -202,7 +202,7 @@ export default function Canvas() {
           {/* Paper Sheet Badge */}
           <div className="absolute -top-7 left-0 flex items-center gap-1.5 text-[11px] text-gray-500 font-medium font-sans pointer-events-none no-print">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-            A4 Resume Document Page ({CANVAS_WIDTH} × {CANVAS_HEIGHT} px)
+            A4 ({CANVAS_WIDTH} × {CANVAS_HEIGHT} px)
           </div>
 
           {/* Canvas Items */}

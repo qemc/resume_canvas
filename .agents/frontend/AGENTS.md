@@ -48,14 +48,15 @@ resume_or/                          # Root monorepo
 │       ├── index.css              # Tailwind CSS v4 import + TipTap styles
 │       ├── vite-env.d.ts          # Vite ambient type declarations
 │       ├── components/
-│       │   ├── ResumeEditor.tsx   # Root layout: Toolbar + Canvas
-│       │   ├── Toolbar.tsx        # Top bar: brand, zoom, add buttons, text formatting
+│       │   ├── ResumeEditor.tsx   # Root layout: Toolbar + Sidebar + Canvas
+│       │   ├── Sidebar.tsx        # Docked left inspector: typography, fonts, element props
+│       │   ├── Toolbar.tsx        # Top bar: brand, undo/redo, zoom, print PDF
 │       │   ├── Canvas.tsx         # A4 paper sheet + pasteboard + keyboard shortcuts + marquee
 │       │   ├── CanvasItem.tsx     # Draggable/resizable wrapper (react-rnd) with snapping
 │       │   ├── SelectionMarquee.tsx  # Blue dashed rubber-band rectangle
-│       │   ├── TextFormattingToolbar.tsx  # Bold/Italic/Underline/FontSize/Color/Align
+│       │   ├── TextFormattingToolbar.tsx  # Contextual TipTap toolbar
 │       │   └── nodes/
-│       │       ├── TextNode.tsx   # TipTap rich-text editor per text block
+│       │       ├── TextNode.tsx   # TipTap rich-text editor (with FontSize & FontFamily)
 │       │       └── ImageNode.tsx  # Image upload via FileReader + data URL
 │       ├── store/
 │       │   └── useCanvasStore.ts  # Zustand store + Zundo undo/redo

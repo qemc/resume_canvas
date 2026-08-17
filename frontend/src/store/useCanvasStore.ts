@@ -28,6 +28,16 @@ export interface AlignmentGuide {
   label?: string;
 }
 
+export interface DefaultTextStyles {
+  fontFamily: string;
+  fontSize: string;
+  color: string;
+  textAlign: 'left' | 'center' | 'right';
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+}
+
 interface CanvasStore {
   canvasItems: CanvasItem[];
   selectedItemIds: string[];
@@ -37,6 +47,7 @@ interface CanvasStore {
   activeEditor: Editor | null;
   zoom: number;
   dragDelta: { deltaX: number; deltaY: number; leaderId: string } | null;
+  defaultTextStyles: DefaultTextStyles;
 
   // Actions
   addItem: (type: 'text' | 'image') => void;
@@ -58,6 +69,7 @@ interface CanvasStore {
   setActiveEditor: (editor: Editor | null) => void;
   setZoom: (zoom: number) => void;
   setDragDelta: (dragDelta: { deltaX: number; deltaY: number; leaderId: string } | null) => void;
+  setDefaultTextStyles: (styles: Partial<DefaultTextStyles>) => void;
 }
 
 /** Helper for immutable item field updates */
@@ -77,6 +89,16 @@ export const useCanvasStore = create<CanvasStore>()(
       activeGuides: [],
       activeEditor: null,
       zoom: 1,
+      dragDelta: null,
+      defaultTextStyles: {
+        fontFamily: 'Inter, sans-serif',
+        fontSize: '16px',
+        color: '#1e293b',
+        textAlign: 'left',
+        bold: false,
+        italic: false,
+        underline: false,
+      },
 
       addItem: (type) =>
         set((state) => {
@@ -95,6 +117,17 @@ export const useCanvasStore = create<CanvasStore>()(
             CANVAS_HEIGHT - height
           ));
 
+          const defaultStyles = state.defaultTextStyles;
+          let content = '';
+          if (type === 'text') {
+            const spanStyle = `font-family: ${defaultStyles.fontFamily}; font-size: ${defaultStyles.fontSize}; color: ${defaultStyles.color};`;
+            let inner = 'Click to edit text...';
+            if (defaultStyles.bold) inner = `<strong>${inner}</strong>`;
+            if (defaultStyles.italic) inner = `<em>${inner}</em>`;
+            if (defaultStyles.underline) inner = `<u>${inner}</u>`;
+            content = `<p style="text-align: ${defaultStyles.textAlign};"><span style="${spanStyle}">${inner}</span></p>`;
+          }
+
           const newItem: CanvasItem = {
             id: nanoid(),
             type,
@@ -102,7 +135,7 @@ export const useCanvasStore = create<CanvasStore>()(
             y,
             width,
             height,
-            content: type === 'text' ? '<p>Click to edit text...</p>' : '',
+            content,
           };
 
           return {
@@ -239,8 +272,6 @@ export const useCanvasStore = create<CanvasStore>()(
 
       clearActiveGuides: () => set(() => ({ activeGuides: [] })),
 
-      dragDelta: null,
-
       setDragDelta: (dragDelta) => set(() => ({ dragDelta })),
 
       setActiveEditor: (editor) => set(() => ({ activeEditor: editor })),
@@ -248,6 +279,11 @@ export const useCanvasStore = create<CanvasStore>()(
       setZoom: (zoom) =>
         set(() => ({
           zoom: Math.max(0.25, Math.min(2, zoom)),
+        })),
+
+      setDefaultTextStyles: (styles) =>
+        set((state) => ({
+          defaultTextStyles: { ...state.defaultTextStyles, ...styles },
         })),
     }),
     {

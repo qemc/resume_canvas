@@ -21,7 +21,7 @@ const FontSize = Extension.create({
   addGlobalAttributes() {
     return [
       {
-        types: ['textStyle'],
+        types: ['textStyle', 'paragraph', 'heading'],
         attributes: {
           fontSize: {
             default: null,
@@ -52,6 +52,44 @@ const FontSize = Extension.create({
   },
 });
 
+// Custom FontFamily extension that adds a proper setFontFamily command
+const FontFamily = Extension.create({
+  name: 'fontFamily',
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['textStyle', 'paragraph', 'heading'],
+        attributes: {
+          fontFamily: {
+            default: null,
+            parseHTML: (element) => element.style.fontFamily?.replace(/['"]/g, '') || null,
+            renderHTML: (attributes) => {
+              if (!attributes.fontFamily) return {};
+              return { style: `font-family: ${attributes.fontFamily}` };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addCommands() {
+    return {
+      setFontFamily:
+        (font: string) =>
+        ({ chain }: { chain: any }) => {
+          return chain().setMark('textStyle', { fontFamily: font }).run();
+        },
+      unsetFontFamily:
+        () =>
+        ({ chain }: { chain: any }) => {
+          return chain().setMark('textStyle', { fontFamily: null }).removeEmptyTextStyle().run();
+        },
+    };
+  },
+});
+
 export default function TextNode({ id, content, isSelected, isEditing }: TextNodeProps) {
   const updateItemContent = useCanvasStore((s) => s.updateItemContent);
   const setActiveEditor = useCanvasStore((s) => s.setActiveEditor);
@@ -61,6 +99,7 @@ export default function TextNode({ id, content, isSelected, isEditing }: TextNod
       StarterKit,
       TextStyle,
       FontSize,
+      FontFamily,
       Color,
       Underline,
       TextAlign.configure({
