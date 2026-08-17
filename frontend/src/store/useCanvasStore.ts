@@ -36,16 +36,19 @@ interface CanvasStore {
   activeGuides: AlignmentGuide[];
   activeEditor: Editor | null;
   zoom: number;
+  dragDelta: { deltaX: number; deltaY: number; leaderId: string } | null;
 
   // Actions
   addItem: (type: 'text' | 'image') => void;
   updateItemCoords: (id: string, x: number, y: number) => void;
   updateMultiplePositions: (positions: { id: string; x: number; y: number }[]) => void;
   updateItemSize: (id: string, width: number, height: number) => void;
+  updateItemBounds: (id: string, x: number, y: number, width: number, height: number) => void;
   updateItemContent: (id: string, content: string) => void;
   deleteItem: (id: string) => void;
   deleteSelected: () => void;
   selectItem: (id: string | null, multi?: boolean) => void;
+  setSelectedItems: (ids: string[], isAdditive?: boolean) => void;
   selectAll: () => void;
   copy: () => void;
   paste: () => void;
@@ -54,6 +57,7 @@ interface CanvasStore {
   clearActiveGuides: () => void;
   setActiveEditor: (editor: Editor | null) => void;
   setZoom: (zoom: number) => void;
+  setDragDelta: (dragDelta: { deltaX: number; deltaY: number; leaderId: string } | null) => void;
 }
 
 /** Helper for immutable item field updates */
@@ -128,6 +132,11 @@ export const useCanvasStore = create<CanvasStore>()(
           canvasItems: updateItems(state.canvasItems, id, { width, height }),
         })),
 
+      updateItemBounds: (id, x, y, width, height) =>
+        set((state) => ({
+          canvasItems: updateItems(state.canvasItems, id, { x, y, width, height }),
+        })),
+
       updateItemContent: (id, content) =>
         set((state) => ({
           canvasItems: updateItems(state.canvasItems, id, { content }),
@@ -175,6 +184,18 @@ export const useCanvasStore = create<CanvasStore>()(
           };
         }),
 
+      setSelectedItems: (ids, isAdditive) =>
+        set((state) => {
+          if (state.editingItemId) return state;
+          const newSelectedIds = isAdditive
+            ? Array.from(new Set([...state.selectedItemIds, ...ids]))
+            : ids;
+          return {
+            selectedItemIds: newSelectedIds,
+            editingItemId: null,
+          };
+        }),
+
       selectAll: () =>
         set((state) => {
           if (state.editingItemId) return state;
@@ -204,6 +225,7 @@ export const useCanvasStore = create<CanvasStore>()(
         set({
           canvasItems: [...state.canvasItems, ...newItems],
           selectedItemIds: newItems.map((i) => i.id),
+          clipboard: newItems,
         });
       },
 
@@ -216,6 +238,10 @@ export const useCanvasStore = create<CanvasStore>()(
       setActiveGuides: (guides) => set(() => ({ activeGuides: guides })),
 
       clearActiveGuides: () => set(() => ({ activeGuides: [] })),
+
+      dragDelta: null,
+
+      setDragDelta: (dragDelta) => set(() => ({ dragDelta })),
 
       setActiveEditor: (editor) => set(() => ({ activeEditor: editor })),
 

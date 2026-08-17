@@ -82,6 +82,13 @@ export default function TextNode({ id, content, isSelected, isEditing }: TextNod
     immediatelyRender: false,
   });
 
+  // Synchronize external content changes (e.g. Undo/Redo via Zundo)
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      editor.commands.setContent(content, { emitUpdate: false });
+    }
+  }, [content, editor]);
+
   // Auto-focus the editor when entering editing mode
   useEffect(() => {
     if (isEditing && editor && !editor.isFocused) {
@@ -93,11 +100,17 @@ export default function TextNode({ id, content, isSelected, isEditing }: TextNod
     if (isSelected && editor) {
       setActiveEditor(editor);
     }
+    return () => {
+      const currentActive = useCanvasStore.getState().activeEditor;
+      if (currentActive === editor) {
+        setActiveEditor(null);
+      }
+    };
   }, [isSelected, editor, setActiveEditor]);
 
   return (
     <div className="w-full h-full relative flex flex-col group">
-      <div className="w-full h-full p-2 overflow-auto bg-transparent cursor-text select-text">
+      <div className="w-full h-full px-1 py-0.5 overflow-hidden bg-transparent cursor-text select-text">
         <EditorContent editor={editor} className="h-full" />
       </div>
     </div>

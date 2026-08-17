@@ -23,12 +23,18 @@ function snapAxis(
   axis: 'x' | 'y',
   threshold: number
 ): { snappedPos: number; axisGuides: AlignmentGuide[] } {
-  let snappedPos = rawPos;
-  let minDelta = threshold + 1;
-  const axisGuides: AlignmentGuide[] = [];
-
   const isX = axis === 'x';
   const guideType = isX ? 'vertical' : 'horizontal';
+
+  interface MatchCandidate {
+    snappedPos: number;
+    guidePos: number;
+    label: string;
+    id: string;
+    delta: number;
+  }
+
+  const candidates: MatchCandidate[] = [];
 
   // Canvas boundary & center targets
   const canvasTargets: TargetMatch[] = [
@@ -39,14 +45,13 @@ function snapAxis(
 
   for (const c of canvasTargets) {
     const delta = Math.abs(rawPos - c.newPos);
-    if (delta <= threshold && delta < minDelta) {
-      minDelta = delta;
-      snappedPos = c.newPos;
-      axisGuides.push({
-        id: `canvas-${guideType}-${c.guidePos}`,
-        type: guideType,
-        position: c.guidePos,
+    if (delta <= threshold) {
+      candidates.push({
+        snappedPos: c.newPos,
+        guidePos: c.guidePos,
         label: c.label,
+        id: `canvas-${guideType}-${c.guidePos}`,
+        delta,
       });
     }
   }
@@ -68,22 +73,39 @@ function snapAxis(
 
     for (const match of itemMatches) {
       const delta = Math.abs(rawPos - match.newPos);
-      if (delta <= threshold && delta <= minDelta) {
-        minDelta = delta;
-        snappedPos = match.newPos;
-        if (!axisGuides.some((g) => Math.abs(g.position - match.guidePos) < 1)) {
-          axisGuides.push({
-            id: `item-${guideType}-${target.id}-${match.guidePos}`,
-            type: guideType,
-            position: match.guidePos,
-            label: match.label,
-          });
-        }
+      if (delta <= threshold) {
+        candidates.push({
+          snappedPos: match.newPos,
+          guidePos: match.guidePos,
+          label: match.label,
+          id: `item-${guideType}-${target.id}-${match.guidePos}`,
+          delta,
+        });
       }
     }
   }
 
-  return { snappedPos: Math.round(snappedPos), axisGuides };
+  if (candidates.length === 0) {
+    return { snappedPos: Math.round(rawPos), axisGuides: [] };
+  }
+
+  const minDelta = Math.min(...candidates.map((c) => c.delta));
+  const bestCandidates = candidates.filter((c) => Math.abs(c.delta - minDelta) < 0.1);
+  const chosen = bestCandidates[0];
+
+  const axisGuides: AlignmentGuide[] = [];
+  for (const cand of bestCandidates) {
+    if (!axisGuides.some((g) => Math.abs(g.position - cand.guidePos) < 1)) {
+      axisGuides.push({
+        id: cand.id,
+        type: guideType,
+        position: cand.guidePos,
+        label: cand.label,
+      });
+    }
+  }
+
+  return { snappedPos: Math.round(chosen.snappedPos), axisGuides };
 }
 
 export function calculateAlignmentSnapping(
@@ -95,7 +117,7 @@ export function calculateAlignmentSnapping(
   selectedIds: string[],
   canvasWidth: number,
   canvasHeight: number,
-  threshold: number = 6
+  threshold: number = 8
 ): SnapResult {
   const otherItems = allItems.filter((i) => !selectedIds.includes(i.id));
 

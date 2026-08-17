@@ -134,27 +134,38 @@ App
 | `updateItemCoords(id, x, y)` | Moves a single item |
 | `updateMultiplePositions(positions)` | Batch-moves multiple items (used during multi-select drag) |
 | `updateItemSize(id, w, h)` | Resizes an item |
+| `updateItemBounds(id, x, y, w, h)` | Atomically updates item coordinates and dimensions (single undo step) |
 | `updateItemContent(id, content)` | Updates text HTML or image data URL |
 | `deleteItem(id)` / `deleteSelected()` | Removes item(s) |
-| `selectItem(id, multi?)` | Selects/deselects items (supports Shift+Click toggle) |
-| `copy()` / `paste()` | Clipboard operations (offset pasted items by +20px) |
+| `selectItem(id, multi?)` | Selects/deselects a single item (supports Shift+Click toggle) |
+| `setSelectedItems(ids, isAdditive?)` | Batch-selects items without toggling (used by marquee selection) |
+| `copy()` / `paste()` | Clipboard operations (consecutive pastes cascade by +20px) |
 | `setEditingItem(id)` | Enters text editing mode |
 | `setActiveGuides(guides)` / `clearActiveGuides()` | Controls alignment snap line display |
 | `setZoom(zoom)` | Sets zoom level (clamped 0.25–2.0) |
 
-**Undo/redo:** Powered by `zundo` temporal middleware. Only `canvasItems` is tracked in undo history (`partialize`). Temporal state is paused during active drags and resumed on drop.
+**Undo/redo:** Powered by `zundo` temporal middleware. Only `canvasItems` is tracked in undo history (`partialize`). Temporal state is paused during active drags and resizes, and resumed on drop/release to ensure atomic single-step history entries.
 
-### Drag & snap architecture
+### Drag, resize & snap architecture
 
 This is the most complex subsystem. Understanding it is critical for modifications.
 
-**Drag lifecycle:**
+**Drag & resize lifecycle (Live Magnetic Snapping & Group Drag):**
 
-1. **`onDragStart`** — Pauses undo history, stores initial positions of all selected items in a `useRef` Map.
-2. **`onDrag`** — Calculates alignment guides from the raw mouse position but does **NOT** update item positions in the store. This prevents React re-render feedback loops (wiggling). Only guide lines are updated for visual display.
-3. **`onDragStop`** — Resumes undo history, computes final snapped position from the drop coordinates, and batch-commits all selected items to their final positions in a single atomic store update.
+1. **`onDragStart` / `onResizeStart`** — Pauses undo history, marks `isDraggingRef.current = true`, and stores initial positions of all selected items in a `useRef` Map.
+2. **`onDrag` / `onResize`** — 
+   - Receives uninhibited raw canvas coordinates `(data.x, data.y)` from `react-draggable`.
+   - Calculates the closest alignment guidelines and snapped target position from `(data.x, data.y)`.
+   - Dispatches `setActiveGuides(guides)` to render SVG vector alignment lines.
+   - Computes drag delta `(deltaX, deltaY)` from drag start. If multiple items are selected, dispatches `setDragDelta({ deltaX, deltaY, leaderId: item.id })` so that all follower items move in real-time synchronization with the leader.
+   - Computes leader snap offset: `offsetX = snappedX - data.x`, `offsetY = snappedY - data.y`.
+   - Feeds `snapOffset` into `<Rnd dragPositionOffset={...}>` for the leader item.
+   - **Result:** The dragged box's borders stay **100% glued to the blue alignment lines** per-axis in real-time, with razor-sharp SVG vector overlay alignment on all 4 borders. All selected items follow in lockstep.
+3. **`onDragStop` / `onResizeStop`** — Resumes undo history, clears active guidelines and `dragDelta`, commits final snapped positions atomically to Zustand (`updateMultiplePositions` for drag or `updateItemBounds` for resize), and clears `isDraggingRef` after a micro-delay to prevent mouse-up from deselecting group members in `onClick`.
 
-**Why this architecture matters:** If you update positions during `onDrag`, React re-renders `<Rnd>` with new `position` props, which conflicts with the library's internal drag state and causes oscillation. The current design avoids this by deferring position commits to `onDragStop`.
+**Canvas Box Model & Guidelines:**
+- The `#canvasRef` container uses `ring-1 ring-gray-300` rather than `border` to preserve the exact `794px × 1123px` internal content area without border shrinkage.
+- Guidelines are drawn via `<svg>` `<line>` elements with mathematical coordinate centering, ensuring identical 0px alignment across Left, Right, Top, and Bottom.
 
 ### Alignment snapping (`lib/alignment.ts`)
 
@@ -162,9 +173,9 @@ The `calculateAlignmentSnapping()` function is a pure function. It takes raw coo
 
 **How it works:**
 - A unified `snapAxis()` helper handles both X and Y axes identically.
-- For each axis, it checks 3 canvas targets (start, center, end) and 5 per-item targets (left/top, center, right/bottom, and two edge-to-edge) against a pixel threshold (default: 6px).
+- For each axis, it tests 3 canvas targets (start, center, end) and 5 per-item targets (left/top, center, right/bottom, and two edge-to-edge) against an 8px magnetic threshold.
+- Candidate matches are gathered, and only guidelines matching the closest snap distance (`minDelta`) are returned (preventing ghost guidelines).
 - Selected items are excluded from snap targets (they don't snap to themselves).
-- Returns the closest snap position + visual guide metadata.
 
 ### Rich text editing (TipTap)
 
@@ -175,9 +186,10 @@ Each `TextNode` creates its own `useEditor()` instance with these extensions:
 - **Underline** — toggle underline
 - **TextAlign** — left/center/right alignment
 
-The custom `FontSize` extension is defined inline in `TextNode.tsx`. It uses `addGlobalAttributes` to attach `fontSize` to the `textStyle` mark.
+**External Content Sync (Undo/Redo):**
+Because TipTap does not automatically react to prop updates after initialization, `TextNode.tsx` maintains a `useEffect` on `content`. When `content !== editor.getHTML()`, it updates the editor via `editor.commands.setContent(content, { emitUpdate: false })`, ensuring `Cmd+Z` / `Cmd+Shift+Z` undo/redo seamlessly syncs with the editor DOM.
 
-When a text block is selected, the `Toolbar` renders `TextFormattingToolbar` which calls commands on the `activeEditor` instance stored in Zustand.
+When a text block is selected, the `Toolbar` renders `TextFormattingToolbar` which calls commands on the `activeEditor` instance stored in Zustand. When unmounted or deselected, `activeEditor` is cleaned up.
 
 ---
 
@@ -202,10 +214,12 @@ When a text block is selected, the `Toolbar` renders `TextFormattingToolbar` whi
 
 ### Important gotchas for agents
 1. **Do NOT update Zustand state during `onDrag` callbacks** — this causes re-render oscillation (wiggling). Only update guide lines during drag; commit positions in `onDragStop`.
-2. **TipTap `immediatelyRender: false`** — required to avoid SSR hydration warnings and ensure React 19 compatibility.
-3. **`pointerEvents` management** — `CanvasItem` sets `pointerEvents: 'none'` on the content wrapper and `pointerEvents: 'auto'` on the delete button. When editing text, the content wrapper gets `pointerEvents: 'auto'` to allow cursor clicks.
-4. **Zoom is handled via CSS `transform: scale()`** on the canvas div, not by scaling coordinates. The `<Rnd>` component receives the `scale` prop to compensate.
-5. **Images are base64** — `ImageNode` reads files via `FileReader.readAsDataURL()`. Large images can bloat the store.
+2. **Always use `updateItemBounds` for resizing** — calling size and coords updates separately creates two distinct undo history entries.
+3. **TipTap `immediatelyRender: false`** — required to avoid SSR hydration warnings and ensure React 19 compatibility.
+4. **`pointerEvents` management** — `CanvasItem` sets `pointerEvents: 'none'` on the content wrapper and `pointerEvents: 'auto'` on the delete button. When editing text, the content wrapper gets `pointerEvents: 'auto'` to allow cursor clicks. Pressing `Escape` exits text editing mode.
+5. **Zoom is handled via CSS `transform: scale()`** on the canvas div, not by scaling coordinates. The `<Rnd>` component receives the `scale` prop to compensate.
+6. **Images are base64** — `ImageNode` reads files via `FileReader.readAsDataURL()`. Input values are reset upon file reading.
+7. **Single-Page PDF Export** — Implemented via native browser print (`@media print`, `@page { size: A4 portrait; margin: 0; }`). The print container `#resume-print-root` locks to 210mm × 297mm with `overflow: hidden; page-break-after: avoid;` to guarantee strictly 1 vector page. Selection frames, guidelines, delete buttons, off-page pasteboard badges, and toolbars are marked `no-print`.
 
 ---
 
@@ -219,15 +233,17 @@ npm run build:frontend    # Must exit 0 with no TypeScript errors
 ### Manual verification checklist
 - [ ] Add text block → appears centered on canvas
 - [ ] Add image block → shows placeholder, double-click opens file picker
-- [ ] Drag block → alignment guides appear, snaps on release
+- [ ] Drag block → alignment guides appear, snaps in real-time
 - [ ] Resize block → alignment guides appear during resize
 - [ ] Multi-select via marquee → all intersecting items selected
 - [ ] Shift+Click → toggles item in selection
+- [ ] Group drag → all selected items move in synchronized lockstep
 - [ ] Double-click text → enters editing mode, toolbar shows formatting
 - [ ] Cmd+Z / Cmd+Shift+Z → undo/redo works
 - [ ] Cmd+C / Cmd+V → copy/paste offsets items
 - [ ] Drag item outside page → "Off-page pasteboard" badge shows
 - [ ] Zoom in/out → canvas scales, drag coordinates stay accurate
+- [ ] Print as PDF / Cmd+P → opens print preview with clean, single A4 page
 - [ ] Delete/Backspace → removes selected items
 
 ---
@@ -240,7 +256,7 @@ The frontend is designed to eventually connect to a **Python backend** (FastAPI 
 |---|---|---|
 | Canvas state | In-memory Zustand store | Save/load via REST API |
 | Images | Base64 data URLs in store | Upload to object storage, store URL |
-| Export (PDF) | Not implemented | Server-side PDF generation from canvas data |
+| Export (PDF) | Client-side Native Vector Print (`@media print`) | Optional server-side headless Chromium PDF generation |
 | Authentication | None | JWT/session auth |
 | Templates | None | Load pre-built resume templates from backend |
 

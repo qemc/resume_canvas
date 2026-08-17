@@ -15,6 +15,8 @@ function rectsIntersect(
 export default function Canvas() {
   const canvasItems = useCanvasStore((s) => s.canvasItems);
   const selectItem = useCanvasStore((s) => s.selectItem);
+  const setSelectedItems = useCanvasStore((s) => s.setSelectedItems);
+  const setEditingItem = useCanvasStore((s) => s.setEditingItem);
   const activeGuides = useCanvasStore((s) => s.activeGuides);
   const zoom = useCanvasStore((s) => s.zoom);
   
@@ -30,6 +32,7 @@ export default function Canvas() {
     currentX: number; currentY: number;
   } | null>(null);
   const isMarqueeActive = useRef(false);
+  const isAdditiveMarquee = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // Undo/Redo via zundo temporal store
@@ -43,6 +46,13 @@ export default function Canvas() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setEditingItem(null);
+        selectItem(null);
+        return;
+      }
+
       const target = e.target as HTMLElement;
       if (
         editingItemId ||
@@ -71,6 +81,13 @@ export default function Canvas() {
       } else if (cmdOrCtrl && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
+      } else if (cmdOrCtrl && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setEditingItem(null);
+        selectItem(null);
+        setTimeout(() => {
+          window.print();
+        }, 50);
       } else if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
         deleteSelected();
@@ -79,11 +96,10 @@ export default function Canvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [copy, paste, selectAll, deleteSelected, editingItemId, undo, redo]);
+  }, [copy, paste, selectAll, deleteSelected, editingItemId, undo, redo, setEditingItem, selectItem]);
 
   // Marquee mouse handlers
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
     if (e.button !== 0) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -92,54 +108,72 @@ export default function Canvas() {
     const x = (e.clientX - rect.left) / zoom;
     const y = (e.clientY - rect.top) / zoom;
 
+    const isAdditive = e.shiftKey || e.metaKey;
+    isAdditiveMarquee.current = isAdditive;
     isMarqueeActive.current = true;
     setMarquee({ startX: x, startY: y, currentX: x, currentY: y });
 
-    if (!e.shiftKey && !e.metaKey) {
+    if (!isAdditive) {
       selectItem(null);
     }
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isMarqueeActive.current || !canvasRef.current) return;
+  useEffect(() => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      if (!isMarqueeActive.current || !canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoom;
-    const y = (e.clientY - rect.top) / zoom;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / zoom;
+      const y = (e.clientY - rect.top) / zoom;
 
-    setMarquee((prev) => prev ? { ...prev, currentX: x, currentY: y } : null);
-  };
+      setMarquee((prev) => prev ? { ...prev, currentX: x, currentY: y } : null);
+    };
 
-  const handleCanvasMouseUp = () => {
-    if (!isMarqueeActive.current || !marquee) {
+    const handleWindowMouseUp = () => {
+      if (!isMarqueeActive.current) return;
+
+      setMarquee((currentMarquee) => {
+        if (currentMarquee) {
+          const mx = Math.min(currentMarquee.startX, currentMarquee.currentX);
+          const my = Math.min(currentMarquee.startY, currentMarquee.currentY);
+          const mw = Math.abs(currentMarquee.currentX - currentMarquee.startX);
+          const mh = Math.abs(currentMarquee.currentY - currentMarquee.startY);
+
+          if (mw > 3 || mh > 3) {
+            const currentItems = useCanvasStore.getState().canvasItems;
+            const intersecting = currentItems.filter((item) =>
+              rectsIntersect(item.x, item.y, item.width, item.height, mx, my, mw, mh)
+            );
+
+            const intersectingIds = intersecting.map((item) => item.id);
+            if (intersectingIds.length > 0) {
+              setSelectedItems(intersectingIds, isAdditiveMarquee.current);
+            }
+          }
+        }
+        return null;
+      });
+
       isMarqueeActive.current = false;
-      setMarquee(null);
-      return;
-    }
+    };
 
-    const mx = Math.min(marquee.startX, marquee.currentX);
-    const my = Math.min(marquee.startY, marquee.currentY);
-    const mw = Math.abs(marquee.currentX - marquee.startX);
-    const mh = Math.abs(marquee.currentY - marquee.startY);
-
-    if (mw > 3 || mh > 3) {
-      const intersecting = canvasItems.filter((item) =>
-        rectsIntersect(item.x, item.y, item.width, item.height, mx, my, mw, mh)
-      );
-
-      if (intersecting.length > 0) {
-        intersecting.forEach((item, idx) => {
-          selectItem(item.id, idx > 0);
-        });
-      }
-    }
-
-    isMarqueeActive.current = false;
-    setMarquee(null);
-  };
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [setSelectedItems, zoom]);
 
   return (
-    <div className="flex items-start justify-center pt-12 pb-32 px-36 min-w-max select-none overflow-auto">
+    <div
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          handleCanvasMouseDown(e);
+        }
+      }}
+      className="flex items-start justify-center pt-10 pb-32 px-6 sm:px-12 w-full min-w-0 select-none overflow-auto"
+    >
       {/* Wrapper that reserves the scaled size in the layout flow */}
       <div
         style={{
@@ -150,11 +184,14 @@ export default function Canvas() {
       >
         {/* Scaled paper sheet canvas with pasteboard overflow enabled */}
         <div
+          id="resume-print-root"
           ref={canvasRef}
-          onMouseDown={handleCanvasMouseDown}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseUp={handleCanvasMouseUp}
-          className="relative bg-white shadow-2xl border border-gray-300 overflow-visible rounded-xs"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCanvasMouseDown(e);
+            }
+          }}
+          className="relative bg-white shadow-2xl ring-1 ring-gray-300 overflow-visible"
           style={{
             width: `${CANVAS_WIDTH}px`,
             height: `${CANVAS_HEIGHT}px`,
@@ -163,7 +200,7 @@ export default function Canvas() {
           }}
         >
           {/* Paper Sheet Badge */}
-          <div className="absolute -top-7 left-0 flex items-center gap-1.5 text-[11px] text-gray-500 font-medium font-sans pointer-events-none">
+          <div className="absolute -top-7 left-0 flex items-center gap-1.5 text-[11px] text-gray-500 font-medium font-sans pointer-events-none no-print">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
             A4 Resume Document Page ({CANVAS_WIDTH} × {CANVAS_HEIGHT} px)
           </div>
@@ -173,40 +210,70 @@ export default function Canvas() {
             <CanvasItem key={item.id} item={item} />
           ))}
 
-          {/* Alignment Guide Lines Overlay */}
-          {activeGuides.map((guide) => {
-            if (guide.type === 'vertical') {
-              return (
-                <div
-                  key={guide.id}
-                  className="absolute top-0 bottom-0 pointer-events-none z-50 flex flex-col items-center"
-                  style={{ left: `${guide.position}px` }}
-                >
-                  <div className="w-[1.5px] h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                  {guide.label && (
-                    <span className="absolute top-2 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-mono -translate-x-1/2 whitespace-nowrap">
-                      {guide.label} ({Math.round(guide.position)}px)
-                    </span>
-                  )}
-                </div>
-              );
-            } else {
-              return (
-                <div
-                  key={guide.id}
-                  className="absolute left-0 right-0 pointer-events-none z-50 flex items-center justify-start"
-                  style={{ top: `${guide.position}px` }}
-                >
-                  <div className="h-[1.5px] w-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                  {guide.label && (
-                    <span className="absolute left-2 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-mono -translate-y-1/2 whitespace-nowrap">
-                      {guide.label} ({Math.round(guide.position)}px)
-                    </span>
-                  )}
-                </div>
-              );
-            }
-          })}
+          {/* Alignment Guide Lines Overlay (Razor-sharp vector rendering) */}
+          {activeGuides.length > 0 && (
+            <>
+              <svg className="absolute inset-0 pointer-events-none z-50 overflow-visible w-full h-full no-print">
+                {activeGuides.map((guide) => {
+                  const pos = Math.round(guide.position);
+                  if (guide.type === 'vertical') {
+                    return (
+                      <line
+                        key={guide.id}
+                        x1={pos}
+                        y1={0}
+                        x2={pos}
+                        y2={CANVAS_HEIGHT}
+                        stroke="#3b82f6"
+                        strokeWidth="1.5"
+                      />
+                    );
+                  } else {
+                    return (
+                      <line
+                        key={guide.id}
+                        x1={0}
+                        y1={pos}
+                        x2={CANVAS_WIDTH}
+                        y2={pos}
+                        stroke="#3b82f6"
+                        strokeWidth="1.5"
+                      />
+                    );
+                  }
+                })}
+              </svg>
+              {activeGuides.map((guide) => {
+                const pos = Math.round(guide.position);
+                if (!guide.label) return null;
+                if (guide.type === 'vertical') {
+                  return (
+                    <div
+                      key={`label-${guide.id}`}
+                      className="absolute top-2 pointer-events-none z-50 -translate-x-1/2 whitespace-nowrap no-print"
+                      style={{ left: `${pos}px` }}
+                    >
+                      <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-mono">
+                        {guide.label} ({pos}px)
+                      </span>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div
+                      key={`label-${guide.id}`}
+                      className="absolute left-2 pointer-events-none z-50 -translate-y-1/2 whitespace-nowrap no-print"
+                      style={{ top: `${pos}px` }}
+                    >
+                      <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-mono">
+                        {guide.label} ({pos}px)
+                      </span>
+                    </div>
+                  );
+                }
+              })}
+            </>
+          )}
 
           {/* Selection Marquee */}
           {marquee && (
@@ -220,7 +287,7 @@ export default function Canvas() {
 
           {/* Empty State */}
           {canvasItems.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none no-print">
               <svg
                 className="w-16 h-16 mb-2 stroke-current"
                 fill="none"
